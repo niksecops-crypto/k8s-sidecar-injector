@@ -1,0 +1,25 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: sidecar-injector-webhook-config
+webhooks:
+  - name: sidecar-injector.example.com
+    clientConfig:
+      service:
+        name: sidecar-injector-service
+        namespace: sidecar-injector
+        path: "/mutate"
+      caBundle: ${CA_BUNDLE} # Must be replaced with base64 encoded CA cert
+    rules:
+      - operations: ["CREATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 5
+    objectSelector:
+      matchExpressions:
+        - key: "sidecar-injection"
+          operator: "NotIn"
+          values: ["disabled"]

@@ -1,0 +1,39 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+  exclude-dirs:
+    - dagger
+    - .dagger
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - typecheck
+    - revive
+    - gofmt
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+    - path: dagger/
+      linters:
+        - typecheck
+        - unused
+        - revive
+    - path: .dagger/
+      linters:
+        - typecheck
+        - unused
+        - revive

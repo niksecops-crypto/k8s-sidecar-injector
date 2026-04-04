@@ -1,0 +1,28 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "k8s-sidecar-injector.fullname" . }}
+  labels:
+    {{- include "k8s-sidecar-injector.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "k8s-sidecar-injector.fullname" . }}-certs
+webhooks:
+  - name: {{ include "k8s-sidecar-injector.name" . }}.{{ .Release.Namespace }}.svc
+    clientConfig:
+      service:
+        name: {{ include "k8s-sidecar-injector.fullname" . }}
+        namespace: {{ .Release.Namespace }}
+        path: "/mutate"
+    rules:
+      - operations: ["CREATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 5
+    objectSelector:
+      matchExpressions:
+        - key: "sidecar-injection"
+          operator: "NotIn"
+          values: ["disabled"]

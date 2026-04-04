@@ -1,0 +1,19 @@
+{{- if .Values.certManager.enabled -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "k8s-sidecar-injector.fullname" . }}-certs
+  labels:
+    {{- include "k8s-sidecar-injector.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "k8s-sidecar-injector.fullname" . }}-certs
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}
+    kind: Issuer
+  dnsNames:
+    - {{ include "k8s-sidecar-injector.fullname" . }}
+    - {{ include "k8s-sidecar-injector.fullname" . }}.{{ .Release.Namespace }}
+    - {{ include "k8s-sidecar-injector.fullname" . }}.{{ .Release.Namespace }}.svc
+{{- end -}}

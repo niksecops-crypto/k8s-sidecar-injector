@@ -1,0 +1,31 @@
+replicaCount: 1
+
+image:
+  repository: sidecar-injector
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 443
+
+certManager:
+  enabled: true
+  issuerName: "selfsigned-issuer"
+
+sidecar:
+  name: "security-agent"
+  image: "falcosecurity/falco-no-driver:latest"
+  args:
+    - "/usr/bin/falco"
+    - "-A"
+  securityContext:
+    privileged: true
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
