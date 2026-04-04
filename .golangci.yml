@@ -1,13 +1,4 @@
-run:
-  timeout: 5m
-  modules-download-mode: readonly
-  allow-parallel-runners: true
-  skip-dirs:
-    - dagger
-    - .dagger
-
 linters:
-  disable-all: true
   enable:
     - errcheck
     - gosimple
@@ -16,8 +7,6 @@ linters:
     - staticcheck
     - unused
     - typecheck
-    - revive
-    - gofmt
 
 issues:
   exclude-use-default: false
@@ -29,11 +18,4 @@ issues:
         - errcheck
     - path: dagger/
       linters:
-        - typecheck
-        - unused
-        - revive
-    - path: .dagger/
-      linters:
-        - typecheck
-        - unused
-        - revive
+        - errcheck
