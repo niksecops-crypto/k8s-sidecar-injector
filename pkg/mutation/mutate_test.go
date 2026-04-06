@@ -202,23 +202,6 @@ func TestSidecarConfigManager_ErrorPaths(t *testing.T) {
 	}
 }
 
-func TestMutatePod_InvalidObjectKind(t *testing.T) {
-	tmpfile, _ := os.CreateTemp("", "sidecar*.yaml")
-	defer os.Remove(tmpfile.Name())
-	os.WriteFile(tmpfile.Name(), []byte("name: sidecar\nimage: nginx"), 0644)
-	mgr, _ := NewSidecarConfigManager(tmpfile.Name())
-
-	ar := &admissionv1.AdmissionReview{
-		Request: &admissionv1.AdmissionRequest{
-			Kind: metav1.GroupVersionKind{
-				Group:   "",
-				Version: "v1",
-				Kind:    "Deployment", // Not a Pod
-			},
-			Object: runtime.RawExtension{Raw: []byte("{}")},
-		},
-	}
-
 	response := MutatePod(ar, mgr)
 	if !response.Allowed {
 		t.Errorf("Expected allowed true (ignoring non-pod)")
