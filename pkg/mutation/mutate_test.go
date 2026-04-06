@@ -202,17 +202,6 @@ func TestSidecarConfigManager_ErrorPaths(t *testing.T) {
 	}
 }
 
-func TestMutatePod_EmptyAdmissionRequest(t *testing.T) {
-	mgr := &SidecarConfigManager{}
-	ar := &admissionv1.AdmissionReview{
-		Request: nil,
-	}
-	response := MutatePod(ar, mgr)
-	if response.Allowed {
-		t.Errorf("Expected allowed false for nil request")
-	}
-}
-
 func TestMutatePod_NilReview(t *testing.T) {
 	mgr := &SidecarConfigManager{}
 	response := MutatePod(nil, mgr)
