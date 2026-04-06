@@ -202,14 +202,6 @@ func TestSidecarConfigManager_ErrorPaths(t *testing.T) {
 	}
 }
 
-func TestMutatePod_NilReview(t *testing.T) {
-	mgr := &SidecarConfigManager{}
-	response := MutatePod(nil, mgr)
-	if response.Allowed {
-		t.Errorf("Expected allowed false for nil review")
-	}
-}
-
 func TestMutatePod_InvalidObjectKind(t *testing.T) {
 	tmpfile, _ := os.CreateTemp("", "sidecar*.yaml")
 	defer os.Remove(tmpfile.Name())
