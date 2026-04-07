@@ -202,15 +202,6 @@ func TestSidecarConfigManager_ErrorPaths(t *testing.T) {
 	}
 }
 
-	response := MutatePod(ar, mgr)
-	if !response.Allowed {
-		t.Errorf("Expected allowed true (ignoring non-pod)")
-	}
-	if response.Patch != nil {
-		t.Errorf("Expected no patch for non-pod")
-	}
-}
-
 func TestMutatePod_InvalidJson(t *testing.T) {
 	tmpfile, _ := os.CreateTemp("", "sidecar*.yaml")
 	defer os.Remove(tmpfile.Name())
