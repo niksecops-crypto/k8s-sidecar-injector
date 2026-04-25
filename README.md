@@ -49,7 +49,7 @@ User/CI-CD
 ### Enterprise Features
 - **Dynamic Configuration**: Sidecar templates are defined in a **ConfigMap**. Update the template and reload the webhook via SIGHUP without recompilation.
 - **Zero-Trust & Security**: Integrated with **cert-manager** for automated TLS certificate management in production.
-- **Dagger Zero-Trust CI/CD**: 🚀 Powered by **Dagger Go SDK**. Our pipeline isn't just a script; it's a portable, containerized Go application. **No YAML-hell**, **100% reproducible** on your laptop or any CI provider. It includes:
+- **Dagger Zero-Trust CI/CD**:  Powered by **Dagger Go SDK**. Our pipeline isn't just a script; it's a portable, containerized Go application. **No YAML-hell**, **100% reproducible** on your laptop or any CI provider. It includes:
   - **SAST (gosec)**: Deep code analysis for security vulnerabilities.
   - **SCA (trivy)**: Real-time dependency & container image scanning.
   - **K8s Linting**: Validating manifests against industry-standard security policies.
