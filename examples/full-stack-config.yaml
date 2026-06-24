@@ -1,0 +1,63 @@
+# Full-stack sidecar config: Falco + OTel Collector injected together.
+# Demonstrates multi-sidecar injection — all entries under 'sidecars' are
+# injected into every annotated pod in a single webhook call.
+#
+# Deploy:
+#   kubectl create configmap sidecar-config \
+#     --from-file=sidecar.yaml=examples/full-stack-config.yaml \
+#     -n sidecar-injector
+#
+# Annotate target pods:
+#   kubectl annotate pod <name> sidecar-injector.io/inject=true
+sidecars:
+  - name: falco-agent
+    image: falcosecurity/falco-no-driver:0.38.0
+    args:
+      - /usr/bin/falco
+      - -A
+      - -K
+      - /var/run/secrets/kubernetes.io/serviceaccount/token
+    securityContext:
+      privileged: true
+      readOnlyRootFilesystem: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    volumeMounts:
+      - mountPath: /etc/falco
+        name: falco-config
+        readOnly: true
+
+  - name: otel-collector
+    image: otel/opentelemetry-collector-contrib:0.101.0
+    args:
+      - --config=/conf/otel-collector-config.yaml
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 10001
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    ports:
+      - containerPort: 4317
+        name: otlp-grpc
+        protocol: TCP
+      - containerPort: 4318
+        name: otlp-http
+        protocol: TCP
+    volumeMounts:
+      - mountPath: /conf
+        name: otel-config
+        readOnly: true

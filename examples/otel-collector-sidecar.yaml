@@ -1,0 +1,37 @@
+# OpenTelemetry Collector sidecar — standalone config.
+# Collects traces and metrics from the main container and forwards to the backend.
+#
+# Deploy:
+#   kubectl create configmap sidecar-config \
+#     --from-file=sidecar.yaml=examples/otel-collector-sidecar.yaml \
+#     -n sidecar-injector
+sidecars:
+  - name: otel-collector
+    image: otel/opentelemetry-collector-contrib:0.101.0
+    args:
+      - --config=/conf/otel-collector-config.yaml
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 10001
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    ports:
+      - containerPort: 4317
+        name: otlp-grpc
+        protocol: TCP
+      - containerPort: 4318
+        name: otlp-http
+        protocol: TCP
+    volumeMounts:
+      - mountPath: /conf
+        name: otel-config
+        readOnly: true

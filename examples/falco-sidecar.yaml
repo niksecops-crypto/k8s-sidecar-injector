@@ -1,0 +1,30 @@
+# Falco runtime security sidecar — standalone config.
+# Mount as a ConfigMap into the webhook at SIDECAR_CONFIG_PATH.
+# Requirements: Falco rules ConfigMap must exist in the target namespace.
+#
+# Deploy:
+#   kubectl create configmap sidecar-config \
+#     --from-file=sidecar.yaml=examples/falco-sidecar.yaml \
+#     -n sidecar-injector
+sidecars:
+  - name: falco-agent
+    image: falcosecurity/falco-no-driver:0.38.0
+    args:
+      - /usr/bin/falco
+      - -A
+      - -K
+      - /var/run/secrets/kubernetes.io/serviceaccount/token
+    securityContext:
+      privileged: true
+      readOnlyRootFilesystem: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    volumeMounts:
+      - mountPath: /etc/falco
+        name: falco-config
+        readOnly: true

@@ -1,0 +1,44 @@
+# Envoy proxy sidecar (service mesh without Istio).
+# Intercepts inbound/outbound traffic for mTLS and observability.
+#
+# Deploy:
+#   kubectl create configmap sidecar-config \
+#     --from-file=sidecar.yaml=examples/envoy-sidecar.yaml \
+#     -n sidecar-injector
+sidecars:
+  - name: envoy-proxy
+    image: envoyproxy/envoy:v1.30-latest
+    args:
+      - -c
+      - /etc/envoy/envoy.yaml
+      - --log-level
+      - warn
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1337
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+        add: [NET_BIND_SERVICE]
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 300m
+        memory: 256Mi
+    ports:
+      - containerPort: 15001
+        name: outbound
+        protocol: TCP
+      - containerPort: 15006
+        name: inbound
+        protocol: TCP
+      - containerPort: 9901
+        name: admin
+        protocol: TCP
+    volumeMounts:
+      - mountPath: /etc/envoy
+        name: envoy-config
+        readOnly: true

@@ -1,0 +1,35 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: sidecar-injector-webhook-config
+  labels:
+    app.kubernetes.io/name: k8s-sidecar-injector
+webhooks:
+  - name: sidecar-injector.niksecops.dev
+    clientConfig:
+      service:
+        name: sidecar-injector-service
+        namespace: sidecar-injector
+        path: "/mutate"
+      caBundle: ${CA_BUNDLE}
+    rules:
+      - operations: ["CREATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 5
+    failurePolicy: Ignore
+    # Opt-in: webhook is only invoked for pods explicitly annotated for injection.
+    # Prevents unnecessary calls for system pods and reduces webhook load.
+    objectSelector:
+      matchLabels:
+        sidecar-injector.io/inject: "true"
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+            - kube-public
