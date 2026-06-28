@@ -13,14 +13,31 @@ certManager:
   enabled: true
   issuerName: "selfsigned-issuer"
 
-sidecar:
-  name: "security-agent"
-  image: "falcosecurity/falco-no-driver:latest"
-  args:
-    - "/usr/bin/falco"
-    - "-A"
-  securityContext:
-    privileged: true
+# The sidecar configurations to be injected into pods.
+# These will be injected as Kubernetes Native Sidecars (initContainers + restartPolicy: Always).
+sidecars:
+  # Default example: Falco security agent.
+  # Note: Falco requires privileged: true because it needs deep kernel access
+  # (eBPF or kernel module) to monitor system calls across the entire node.
+  - name: "security-agent"
+    image: "falcosecurity/falco-no-driver:latest"
+    args:
+      - "/usr/bin/falco"
+      - "-A"
+    securityContext:
+      privileged: true
+
+# Security settings for the injector pod to comply with Restricted Pod Security Standards
+podSecurityContext: {}
+
+securityContext:
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
 
 resources:
   limits:

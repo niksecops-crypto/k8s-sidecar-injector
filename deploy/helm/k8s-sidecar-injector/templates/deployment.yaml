@@ -16,8 +16,16 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      {{- if .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- end }}
       containers:
         - name: sidecar-injector
+          {{- if .Values.securityContext }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- end }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
@@ -27,6 +35,10 @@ spec:
           env:
             - name: SIDECAR_CONFIG_PATH
               value: "/etc/webhook/config/sidecar.yaml"
+            {{- if not .Values.certManager.enabled }}
+            - name: AUTO_GENERATE_CERT
+              value: "true"
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -46,14 +58,18 @@ spec:
           volumeMounts:
             - name: webhook-certs
               mountPath: /etc/webhook/certs
-              readOnly: true
+              readOnly: {{ .Values.certManager.enabled }}
             - name: webhook-config
               mountPath: /etc/webhook/config
               readOnly: true
       volumes:
         - name: webhook-certs
+          {{- if .Values.certManager.enabled }}
           secret:
             secretName: {{ include "k8s-sidecar-injector.fullname" . }}-certs
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         - name: webhook-config
           configMap:
             name: {{ include "k8s-sidecar-injector.fullname" . }}-config

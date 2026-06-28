@@ -2,11 +2,15 @@ package mutation
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"sync"
+	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,6 +34,27 @@ type SidecarConfig struct {
 	Sidecars []corev1.Container `yaml:"sidecars"`
 }
 
+// Validate ensures the parsed configuration is semantically valid.
+func (cfg *SidecarConfig) Validate() error {
+	if len(cfg.Sidecars) == 0 {
+		return errors.New("no sidecars configured")
+	}
+	seen := make(map[string]bool)
+	for _, s := range cfg.Sidecars {
+		if s.Name == "" {
+			return errors.New("container name cannot be empty")
+		}
+		if s.Image == "" {
+			return fmt.Errorf("container image cannot be empty for sidecar %q", s.Name)
+		}
+		if seen[s.Name] {
+			return fmt.Errorf("duplicate sidecar name %q found in configuration", s.Name)
+		}
+		seen[s.Name] = true
+	}
+	return nil
+}
+
 // SidecarConfigManager manages the sidecar configuration with support
 // for hot-reload via SIGHUP without downtime.
 type SidecarConfigManager struct {
@@ -37,6 +62,19 @@ type SidecarConfigManager struct {
 	config     SidecarConfig
 	configPath string
 }
+
+var (
+	mutationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "sidecar_injector_mutations_total",
+		Help: "Total number of pod mutations processed",
+	}, []string{"status", "namespace"})
+
+	mutationDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "sidecar_injector_mutation_duration_seconds",
+		Help:    "Duration of the mutation process",
+		Buckets: prometheus.DefBuckets,
+	})
+)
 
 // NewSidecarConfigManager creates a manager and performs an initial load.
 func NewSidecarConfigManager(path string) (*SidecarConfigManager, error) {
@@ -60,8 +98,8 @@ func (m *SidecarConfigManager) Reload() error {
 		return fmt.Errorf("unmarshal sidecar config: %w", err)
 	}
 
-	if len(cfg.Sidecars) == 0 {
-		return fmt.Errorf("sidecar config at %q has no entries under 'sidecars'", m.configPath)
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid sidecar config: %w", err)
 	}
 
 	m.mu.Lock()
@@ -89,14 +127,20 @@ func (m *SidecarConfigManager) GetTemplates() []corev1.Container {
 // MutatePod processes an AdmissionReview and injects configured sidecars into
 // pods that carry the annotation sidecar-injector.io/inject: "true".
 //
-// Sidecars that are already present (matched by container name) are skipped,
-// making the operation idempotent across re-schedules.
+// Sidecars are injected as Native Sidecars (initContainers with restartPolicy: Always).
 func MutatePod(ar *admissionv1.AdmissionReview, mgr *SidecarConfigManager) *admissionv1.AdmissionResponse {
+	start := time.Now()
 	req := ar.Request
+
+	recordMetrics := func(status string) {
+		mutationsTotal.WithLabelValues(status, req.Namespace).Inc()
+		mutationDuration.Observe(time.Since(start).Seconds())
+	}
 
 	var pod corev1.Pod
 	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
 		slog.Error("could not unmarshal pod object", "uid", req.UID, "error", err)
+		recordMetrics("error")
 		return &admissionv1.AdmissionResponse{
 			Result: &metav1.Status{Message: err.Error()},
 		}
@@ -114,13 +158,17 @@ func MutatePod(ar *admissionv1.AdmissionReview, mgr *SidecarConfigManager) *admi
 			"namespace", req.Namespace,
 			"annotation", AnnotationInject,
 		)
+		recordMetrics("skipped")
 		return &admissionv1.AdmissionResponse{Allowed: true}
 	}
 
 	templates := mgr.GetTemplates()
 
-	existing := make(map[string]bool, len(pod.Spec.Containers))
+	existing := make(map[string]bool)
 	for _, c := range pod.Spec.Containers {
+		existing[c.Name] = true
+	}
+	for _, c := range pod.Spec.InitContainers {
 		existing[c.Name] = true
 	}
 
@@ -131,17 +179,22 @@ func MutatePod(ar *admissionv1.AdmissionReview, mgr *SidecarConfigManager) *admi
 			continue
 		}
 
-		if len(pod.Spec.Containers) == 0 && len(patch) == 0 {
-			// Pod has no containers yet: initialize the array instead of appending.
+		// Enforce Native Sidecar properties (Kubernetes 1.28+)
+		if tmpl.RestartPolicy == nil || *tmpl.RestartPolicy != corev1.ContainerRestartPolicyAlways {
+			always := corev1.ContainerRestartPolicyAlways
+			tmpl.RestartPolicy = &always
+		}
+
+		if len(pod.Spec.InitContainers) == 0 && len(patch) == 0 {
 			patch = append(patch, PatchOperation{
 				Op:    "add",
-				Path:  "/spec/containers",
+				Path:  "/spec/initContainers",
 				Value: []corev1.Container{tmpl},
 			})
 		} else {
 			patch = append(patch, PatchOperation{
 				Op:    "add",
-				Path:  "/spec/containers/-",
+				Path:  "/spec/initContainers/-",
 				Value: tmpl,
 			})
 		}
@@ -149,11 +202,13 @@ func MutatePod(ar *admissionv1.AdmissionReview, mgr *SidecarConfigManager) *admi
 
 	if len(patch) == 0 {
 		slog.Info("all sidecars already present, no mutations needed", "pod", pod.Name)
+		recordMetrics("skipped")
 		return &admissionv1.AdmissionResponse{Allowed: true}
 	}
 
 	patchBytes, err := json.Marshal(patch)
 	if err != nil {
+		recordMetrics("error")
 		return &admissionv1.AdmissionResponse{
 			Result: &metav1.Status{Message: err.Error()},
 		}
@@ -161,6 +216,7 @@ func MutatePod(ar *admissionv1.AdmissionReview, mgr *SidecarConfigManager) *admi
 
 	pt := admissionv1.PatchTypeJSONPatch
 	slog.Info("injecting sidecars", "pod", pod.Name, "namespace", req.Namespace, "patches", len(patch))
+	recordMetrics("mutated")
 	return &admissionv1.AdmissionResponse{
 		Allowed:   true,
 		Patch:     patchBytes,

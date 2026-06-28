@@ -92,13 +92,18 @@ func TestMutatePod_InjectsAnnotatedPod(t *testing.T) {
 	if len(patches) != 1 {
 		t.Fatalf("expected 1 patch, got %d", len(patches))
 	}
-	if patches[0].Op != "add" || patches[0].Path != "/spec/containers/-" {
+	if patches[0].Op != "add" || patches[0].Path != "/spec/initContainers" {
 		t.Errorf("unexpected patch: %+v", patches[0])
 	}
 
-	v, ok := patches[0].Value.(map[string]interface{})
+	vList, ok := patches[0].Value.([]interface{})
+	if !ok || len(vList) != 1 {
+		t.Fatalf("expected list of containers, got %T: %v", patches[0].Value, patches[0].Value)
+	}
+	
+	v, ok := vList[0].(map[string]interface{})
 	if !ok || v["name"] != "security-agent" {
-		t.Errorf("expected security-agent container in patch value, got %v", patches[0].Value)
+		t.Errorf("expected security-agent container in patch value, got %v", vList[0])
 	}
 }
 
@@ -212,7 +217,12 @@ func TestMutatePod_MultiSidecar_PartiallyInjected(t *testing.T) {
 		t.Fatalf("expected 1 patch (only otel-collector missing), got %d", len(patches))
 	}
 
-	v := patches[0].Value.(map[string]interface{})
+	vList, ok := patches[0].Value.([]interface{})
+	if !ok || len(vList) != 1 {
+		t.Fatalf("expected list of containers, got %T: %v", patches[0].Value, patches[0].Value)
+	}
+
+	v := vList[0].(map[string]interface{})
 	if v["name"] != "otel-collector" {
 		t.Errorf("expected otel-collector patch, got %v", v["name"])
 	}
@@ -239,8 +249,8 @@ func TestMutatePod_EmptyContainers(t *testing.T) {
 	if err := json.Unmarshal(resp.Patch, &patches); err != nil {
 		t.Fatal(err)
 	}
-	if patches[0].Path != "/spec/containers" {
-		t.Errorf("expected /spec/containers for empty pod, got %s", patches[0].Path)
+	if patches[0].Path != "/spec/initContainers" {
+		t.Errorf("expected /spec/initContainers for empty pod, got %s", patches[0].Path)
 	}
 }
 
@@ -284,6 +294,21 @@ func TestSidecarConfigManager_ErrorPaths(t *testing.T) {
 	invalidYAML := writeSidecarConfig(t, "sidecars: [\ninvalid yaml ::::\n")
 	if _, err := NewSidecarConfigManager(invalidYAML); err == nil {
 		t.Error("expected error for invalid YAML")
+	}
+
+	missingName := writeSidecarConfig(t, "sidecars:\n  - image: nginx\n")
+	if _, err := NewSidecarConfigManager(missingName); err == nil {
+		t.Error("expected error for missing container name")
+	}
+
+	missingImage := writeSidecarConfig(t, "sidecars:\n  - name: my-sidecar\n")
+	if _, err := NewSidecarConfigManager(missingImage); err == nil {
+		t.Error("expected error for missing container image")
+	}
+
+	duplicateName := writeSidecarConfig(t, "sidecars:\n  - name: my-sidecar\n    image: a\n  - name: my-sidecar\n    image: b\n")
+	if _, err := NewSidecarConfigManager(duplicateName); err == nil {
+		t.Error("expected error for duplicate sidecar names")
 	}
 }
 

@@ -6,13 +6,5 @@ metadata:
     {{- include "k8s-sidecar-injector.labels" . | nindent 4 }}
 data:
   sidecar.yaml: |
-    name: {{ .Values.sidecar.name }}
-    image: {{ .Values.sidecar.image }}
-    {{- if .Values.sidecar.args }}
-    args:
-      {{- toYaml .Values.sidecar.args | nindent 6 }}
-    {{- end }}
-    {{- if .Values.sidecar.securityContext }}
-    securityContext:
-      {{- toYaml .Values.sidecar.securityContext | nindent 6 }}
-    {{- end }}
+    sidecars:
+      {{- toYaml .Values.sidecars | nindent 6 }}

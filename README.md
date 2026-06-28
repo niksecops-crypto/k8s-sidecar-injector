@@ -1,122 +1,76 @@
 # Kubernetes Mutating Webhook: Sidecar Injector (Enterprise-Ready)
 
-[![CI](https://github.com/niksecops-crypto/k8s-sidecar-injector/actions/workflows/ci.yml/badge.svg)](https://github.com/niksecops-crypto/k8s-sidecar-injector/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-[English](#english) | [Русский](README.ru.md)
+[Русский](README.ru.md) | [English](README.md)
 
 ---
 
-## English
+## English Version
 
 ### Project Overview
-This project implements a **Production-Ready Mutating Admission Webhook** for Kubernetes in Go. It enables a **Zero-trust architecture** by automatically injecting security sidecars, log collectors, or proxy services into Pods without requiring developers to modify their Dockerfiles or manifests (**Non-intrusive**).
+This project implements a **Mutating Admission Webhook** for Kubernetes in Go. It automatically injects sidecar containers into newly created pods based on annotations.
 
-### Architecture
-```text
-User/CI-CD
-    |
-    v
-+-----------------------+
-|  K8s API Server       |
-+-----------+-----------+
-            |
-            | (1) Admission Review Request
-            v
-+-----------------------+
-| Mutating Webhook      | (2) Read Sidecar Template from ConfigMap
-| (This Go Service)     | (3) Generate JSON Patch
-+-----------+-----------+
-            |
-            | (4) Admission Review Response (Patch)
-            v
-+-----------------------+
-|  K8s API Server       |
-+-----------+-----------+
-            |
-            | (5) Create Pod with Injected Sidecar
-            v
-+-----------+-----------+
-| Pod                  |
-|  +----------------+  |
-|  | Main Container |  |
-|  +----------------+  |
-|  | Sidecar        |  |
-|  +----------------+  |
-+----------------------+
-```
+This project goes beyond standard injectors by leveraging **Kubernetes Native Sidecars (initContainers + RestartPolicy: Always)** introduced in Kubernetes 1.28+. This guarantees perfect startup and shutdown ordering for your sidecars!
 
-### Enterprise Features
-- **Dynamic Configuration**: Sidecar templates are defined in a **ConfigMap**. Update the template and reload the webhook via SIGHUP without recompilation.
-- **Zero-Trust & Security**: Integrated with **cert-manager** for automated TLS certificate management in production.
-- **Dagger Zero-Trust CI/CD**:  Powered by **Dagger Go SDK**. Our pipeline isn't just a script; it's a portable, containerized Go application. **No YAML-hell**, **100% reproducible** on your laptop or any CI provider. It includes:
-  - **SAST (gosec)**: Deep code analysis for security vulnerabilities.
-  - **SCA (trivy)**: Real-time dependency & container image scanning.
-  - **K8s Linting**: Validating manifests against industry-standard security policies.
-- **Production-Ready**: Includes **Graceful Shutdown**, **Prometheus Metrics**, and **Health Probes**.
-- **High Observability**: Structured JSON logging using Go 1.21 `slog`.
-- **CI/CD Integration**: Automated linting and testing (60%+ coverage) via GitHub Actions.
+Read more about why this matters in our [Native Sidecars Wiki](docs/wiki/native-sidecars.md).
+
+### Key Enterprise Features
+- **Native Sidecars**: Injects into `initContainers` instead of `containers` to ensure sidecars start first and die last.
+- **Hot-Reloadable Config**: Change the sidecars injected via ConfigMap without restarting the webhook (Zero downtime).
+- **Strict Configuration Validation**: Checks for duplicate sidecar names and missing images before accepting config changes.
+- **Prometheus Metrics**: Built-in metrics (`sidecar_injector_mutations_total` and `sidecar_injector_mutation_duration_seconds`) at `:8443/metrics`.
+- **Restricted Pod Security**: Runs completely non-root, read-only filesystem, dropping all capabilities.
+- **Auto-TLS Fallback**: Works natively with `cert-manager` for production, but automatically generates self-signed certificates for quick local development.
 
 ### Technical Stack
-- **Go 1.21+**: High performance and efficiency.
-- **Helm**: Standard package manager for K8s deployment.
-- **cert-manager**: Industry standard for X.509 certificate management.
-- **Prometheus**: Real-time monitoring and metrics.
+- **Go 1.21+**: High performance, zero dependency core.
+- **Helm 3**: Robust packaging and deployment.
+- **JSON Patch (RFC 6902)**: Standardized, exact mutations without altering the original pod source code.
 
 ---
 
-### Dagger CI/CD (Zero-Trust Pipeline)
-Forget about fragile YAML scripts. Our project uses a **Dagger-powered Go Module** to handle CI/CD. It’s a 100% portable, type-safe pipeline that runs anywhere—on your laptop, GitHub Actions, or any cloud. 
+### Getting Started
 
-**Why Dagger?**
-- **No YAML-Hell**: CI logic is written in pure Go.
-- **Portability**: Run the exact same pipeline locally: `dagger call run-all --source .`.
-- **Zero-Trust**: Every build stage runs in a secure, isolated container.
-- **Speed**: Intelligent caching across all stages.
+#### 1. Clone the repository
+```bash
+git clone https://github.com/niksecops-crypto/k8s-sidecar-injector.git
+cd k8s-sidecar-injector
+```
 
----
-
-### Installation & Deployment
-
-#### 1. Helm Deployment (Recommended for Production)
-The Helm chart supports automated TLS via cert-manager.
+#### 2. Deploy using Helm
+This is the recommended way to install the injector.
 
 ```bash
-cd deploy/helm/k8s-sidecar-injector
-helm install sidecar-injector . -n sidecar-injector --create-namespace
+helm upgrade --install k8s-sidecar-injector ./deploy/helm/k8s-sidecar-injector \
+    --namespace sidecar-injector --create-namespace
 ```
 
-#### 2. Local Development (Self-signed)
-```bash
-# Generate certs locally
-chmod +x scripts/gen-certs.sh
-./scripts/gen-certs.sh
-
-# Apply manifests
-kubectl apply -f manifests/
-```
-
-### Dynamic Configuration (ConfigMap)
-The sidecar template is stored in a ConfigMap. You can modify it at runtime:
-```yaml
-# Example ConfigMap entry
-sidecar.yaml: |
-  name: "security-agent"
-  image: "falcosecurity/falco-no-driver:latest"
-  args: ["/usr/bin/falco", "-A"]
-```
-After updating the ConfigMap, the webhook will reload the template automatically if the pod is restarted or if you send a SIGHUP signal to the process.
+If you don't use `cert-manager`, the Helm chart will automatically pass `AUTO_GENERATE_CERT=true` to the deployment and manage a temporary self-signed certificate for you in an `emptyDir` volume!
 
 ### Validation
+
+To verify the injection is working, run a test pod with the `sidecar-injector.io/inject: "true"` annotation:
+
 ```bash
-kubectl run nginx --image=nginx
-kubectl get pod nginx -o jsonpath='{.spec.containers[*].name}'
-# Output: nginx security-agent
+kubectl run test-pod --image=nginx --restart=Never --labels="sidecar-injector.io/inject=true" --annotations="sidecar-injector.io/inject=true"
 ```
 
-## Documentation
-
-- [Production Deployment Guide](docs/production-guide.md) — TLS setup, sidecar config format, namespace scoping, hot-reload, commercial patterns
+Check the `initContainers` in the pod to see the injected Native Sidecar:
+```bash
+kubectl get pod test-pod -o jsonpath='{.spec.initContainers[*].name}'
+```
+**Expected output:** `security-agent` (or whichever sidecars you defined in `values.yaml`).
 
 ---
-*Maintained by [niksecops-crypto](https://github.com/niksecops-crypto)*
+
+### Customization
+Edit `deploy/helm/k8s-sidecar-injector/values.yaml` to configure which sidecars to inject.
+
+```yaml
+sidecars:
+  - name: "my-sidecar"
+    image: "my-image:latest"
+    # ... any standard corev1.Container specs
+```
+
+---
+**Developed specifically for Nik577.**

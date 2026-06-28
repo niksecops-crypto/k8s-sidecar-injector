@@ -21,15 +21,23 @@ func TestHandleMutate(t *testing.T) {
 	// Setup temporary sidecar config
 	tmpfile, _ := os.CreateTemp("", "sidecar*.yaml")
 	defer os.Remove(tmpfile.Name())
-	if err := os.WriteFile(tmpfile.Name(), []byte("name: sidecar\nimage: nginx"), 0644); err != nil {
+	if err := os.WriteFile(tmpfile.Name(), []byte("sidecars:\n  - name: sidecar\n    image: nginx"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	mgr, _ := mutation.NewSidecarConfigManager(tmpfile.Name())
+	mgr, err := mutation.NewSidecarConfigManager(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("failed to init config manager: %v", err)
+	}
 	server := &Server{ConfigManager: mgr}
 
 	pod := corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod",
+			Annotations: map[string]string{
+				"sidecar-injector.io/inject": "true",
+			},
+		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{Name: "main", Image: "alpine"}},
 		},
